@@ -7,8 +7,10 @@ import (
 	"os"
 )
 
-// 4 bytes to encode uint32 record length.
+// recordLenSize is a record length in bytes needed to encode uint32.
 const recordLenSize = 4
+
+// kvDelimeter is a delimiter between key and value in segment's record.
 const kvDelimeter = byte('\x00')
 
 // segment represents a log file (append-only sequence of records).

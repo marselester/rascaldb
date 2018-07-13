@@ -1,23 +1,12 @@
 package rascaldb
 
 import (
+	"bytes"
 	"io"
 	"io/ioutil"
 	"os"
 	"testing"
 )
-
-// Make sure testdata is cleared after the tests run.
-func TestMain(m *testing.M) {
-	code := m.Run()
-	teardown()
-	os.Exit(code)
-}
-
-func teardown() {
-	os.Remove("testdata/notfound.db")
-	os.Remove("testdata/writetest.db")
-}
 
 func TestOpenSegment_error(t *testing.T) {
 	tt := []struct {
@@ -26,10 +15,10 @@ func TestOpenSegment_error(t *testing.T) {
 		current bool
 		wantErr bool
 	}{
-		{"write ok", "testdata/notfound.db", true, false},
-		{"write error", "testdata/readtest.db", true, false},
-		{"read error", "testdata/notfound.db", false, true},
-		{"read ok", "testdata/readtest.db", false, false},
+		{"write ok", "testdata/404segment", true, false},
+		{"write error", "testdata/readsegment", true, false},
+		{"read error", "testdata/404segment", false, true},
+		{"read ok", "testdata/readsegment", false, false},
 	}
 
 	for _, tc := range tt {
@@ -47,30 +36,30 @@ func TestOpenSegment_error(t *testing.T) {
 func TestSegment_close(t *testing.T) {
 	s := segment{}
 	if err := s.close(); err != nil {
-		t.Errorf("close error when both files are nil: %v", err)
+		t.Errorf("close() error when both files are nil: %v", err)
 	}
 
-	f, err := os.Open("testdata/readtest.db")
+	f, err := os.Open("testdata/readsegment")
 	s = segment{fr: f}
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = s.close(); err != nil {
-		t.Errorf("close error when read file is open: %v", err)
+		t.Errorf("close() error when read file is open: %v", err)
 	}
 
-	f, err = os.Open("testdata/readtest.db")
+	f, err = os.Open("testdata/readsegment")
 	s = segment{fw: f}
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = s.close(); err != nil {
-		t.Errorf("close error when write file is open: %v", err)
+		t.Errorf("close() error when write file is open: %v", err)
 	}
 }
 
 func TestSegment_read(t *testing.T) {
-	s, err := openSegment("testdata/readtest.db", false)
+	s, err := openSegment("testdata/readsegment", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +103,7 @@ func TestSegment_read(t *testing.T) {
 			if key != tc.wantKey {
 				t.Errorf("read(%d) key %q, want %q", tc.offset, key, tc.wantKey)
 			}
-			if !equal(value, tc.wantValue) {
+			if !bytes.Equal(value, tc.wantValue) {
 				t.Errorf("read(%d) value %q, want %q", tc.offset, value, tc.wantValue)
 			}
 		})
@@ -122,7 +111,7 @@ func TestSegment_read(t *testing.T) {
 }
 
 func TestSegment_read_error(t *testing.T) {
-	s, err := openSegment("testdata/readtest.db", false)
+	s, err := openSegment("testdata/readsegment", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,59 +154,96 @@ func TestSegment_read_error(t *testing.T) {
 }
 
 func TestSegment_write(t *testing.T) {
-	s, err := openSegment("testdata/writetest.db", true)
-	if err != nil {
-		t.Fatal(err)
+	tt := []struct {
+		name           string
+		key            string
+		value          []byte
+		wantRecord     []byte
+		wantOffset     int64
+		wantNextOffset int64
+	}{
+		{
+			name:       "name=Bob",
+			key:        "name",
+			value:      []byte("Bob"),
+			wantRecord: []byte("\f\x00\x00\x00name\x00Bob"),
+			wantOffset: 0,
+			// 4 bytes for record len, key is 4 bytes, delimeter is 1 byte, value is 3 bytes.
+			wantNextOffset: 12,
+		},
+		{
+			name:       "name=nil",
+			key:        "name",
+			value:      nil,
+			wantRecord: []byte("\t\x00\x00\x00name\x00"),
+			wantOffset: 0,
+			// 4 bytes for record len, key is 4 bytes, delimeter is 1 byte, value is 0 bytes.
+			wantNextOffset: 9,
+		},
+		{
+			name:       "empty=Bob",
+			key:        "",
+			value:      []byte("Bob"),
+			wantRecord: []byte("\b\x00\x00\x00\x00Bob"),
+			wantOffset: 0,
+			// 4 bytes for record len, key is 0 bytes, delimeter is 1 byte, value is 3 bytes.
+			wantNextOffset: 8,
+		},
 	}
-	defer s.close()
 
-	key := "name"
-	value := []byte("Bob")
-	if err = s.write(key, value); err != nil {
-		t.Fatal(err)
-	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := openSegment("testdata/writesegment", true)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	got, err := ioutil.ReadFile("testdata/writetest.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []byte("\f\x00\x00\x00name\x00Bob")
-	if !equal(got, want) {
-		t.Errorf("write(%q, %q) got %q, want %q", key, value, got, want)
-	}
+			if err = s.write(tc.key, tc.value); err != nil {
+				t.Fatal(err)
+			}
+			s.close()
 
-	var wantOffset int64
-	if s.index[key] != wantOffset {
-		t.Errorf("write(%q, %q) key offset %d, want %d", key, value, s.index[key], wantOffset)
-	}
+			record, err := ioutil.ReadFile("testdata/writesegment")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(record, tc.wantRecord) {
+				t.Errorf("write(%q, %q) got %q, want %q", tc.key, tc.value, record, tc.wantRecord)
+			}
 
-	// 4 bytes for record len, key is 4 bytes, delimeter is 1 byte, value is 3 bytes.
-	wantOffset = 12
-	if s.offset != wantOffset {
-		t.Errorf("write(%q, %q) new offset %d, want %d", key, value, s.offset, wantOffset)
+			if s.index[tc.key] != tc.wantOffset {
+				t.Errorf("write(%q, %q) key offset %d, want %d", tc.key, tc.value, s.index[tc.key], tc.wantOffset)
+			}
+
+			if s.offset != tc.wantNextOffset {
+				t.Errorf("write(%q, %q) new offset %d, want %d", tc.key, tc.value, s.offset, tc.wantNextOffset)
+			}
+
+			teardown()
+		})
 	}
 }
 
 func TestSegment_loadIndex(t *testing.T) {
-	s, err := openSegment("testdata/readtest.db", false)
+	s, err := openSegment("testdata/readsegment", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.close()
 
 	if err := s.loadIndex(); err != nil {
-		t.Errorf("loadIndex error: %v", err)
+		t.Errorf("loadIndex() error: %v", err)
 	}
 
 	key := "name"
 	offset, ok := s.index[key]
 	if !ok {
-		t.Errorf("loadIndex %q key is not indexed", key)
+		t.Errorf("loadIndex() %q key is not indexed", key)
 	}
 
 	const want = 12
 	if offset != want {
-		t.Errorf("loadIndex %q key offset is %d, want %d", key, offset, want)
+		t.Errorf("loadIndex() %q key offset is %d, want %d", key, offset, want)
 	}
 }
 
@@ -239,7 +265,7 @@ func TestEncode(t *testing.T) {
 
 	for _, tc := range tt {
 		got := encode(tc.key, tc.value)
-		if !equal(got, tc.want) {
+		if !bytes.Equal(got, tc.want) {
 			t.Errorf("encode(%q, %v) = %v, want %v", tc.key, tc.value, got, tc.want)
 		}
 	}
@@ -263,20 +289,8 @@ func TestDecode(t *testing.T) {
 		if key != tc.wantKey {
 			t.Errorf("decode(%q) key %q, want %q", tc.b, key, tc.wantKey)
 		}
-		if !equal(value, tc.wantValue) {
-			t.Errorf("read(%q) value %q, want %q", tc.b, value, tc.wantValue)
+		if !bytes.Equal(value, tc.wantValue) {
+			t.Errorf("decode(%q) value %q, want %q", tc.b, value, tc.wantValue)
 		}
 	}
-}
-
-func equal(s1, s2 []byte) bool {
-	if len(s1) != len(s2) {
-		return false
-	}
-	for i := range s1 {
-		if s1[i] != s2[i] {
-			return false
-		}
-	}
-	return true
 }
