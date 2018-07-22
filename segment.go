@@ -15,6 +15,8 @@ const kvDelimeter = byte('\x00')
 
 // segment represents a log file (append-only sequence of records).
 type segment struct {
+	// name is a segment's filename including the db dir.
+	name string
 	// fw is a File opened for writing logs.
 	fw *os.File
 	// fr is a File opened for reads.
@@ -30,6 +32,7 @@ type segment struct {
 // Note, you must call loadIndex to populate in-memory index.
 func openSegment(name string, writable bool) (*segment, error) {
 	s := segment{
+		name:  name,
 		index: make(map[string]int64),
 	}
 

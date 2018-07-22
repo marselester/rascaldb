@@ -2,7 +2,6 @@
 package rascaldb
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,22 +26,28 @@ func Open(name string) (*DB, error) {
 		return nil, err
 	}
 
-	// All existing segment files are opened for read only.
 	path := filepath.Join(name, trunk)
 	filenames, err := readSegmentNames(path)
+	// Since there is no trunk file, this is a new db.
+	// Let's make sure it's writable.
+	if os.IsNotExist(err) {
+		err = writeSegmentNames(path, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	segmentsQty := len(filenames)
+	// All existing segment files are opened for read only and a new segment is writable.
+	segmentsQty := len(filenames) + 1
 	db := &DB{name: name}
 	db.segments.Store(
-		make([]*segment, segmentsQty),
+		make([]*segment, 0, segmentsQty),
 	)
 
 	var s *segment
 	for _, segName := range filenames {
-		if s, err = openSegment(segName, false); err != nil {
+		path = filepath.Join(name, segName)
+		if s, err = openSegment(path, false); err != nil {
 			return nil, err
 		}
 		if err = s.loadIndex(); err != nil {
@@ -72,20 +77,14 @@ func (db *DB) Get(key string) ([]byte, error) {
 
 	var ok bool
 	var offset int64
-	for i := len(ss); i >= 0; i-- {
+	for i := len(ss) - 1; i >= 0; i-- {
 		if offset, ok = ss[i].index[key]; ok {
 			_, value, err := ss[i].read(offset)
-			if err == io.EOF {
-				return nil, ErrKeyNotFound
-			}
-			if err != nil {
-				return nil, err
-			}
-			return value, nil
+			return value, err
 		}
 	}
 
-	return nil, nil
+	return nil, ErrKeyNotFound
 }
 
 // Set puts a key in database.
