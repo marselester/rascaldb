@@ -47,7 +47,7 @@ func openSegment(name string, writable bool) (*segment, error) {
 	return &s, err
 }
 
-// Close closes a segment file which was opened for reads and maybe writes.
+// close closes a segment file which was opened for reads and maybe writes.
 func (s *segment) close() error {
 	if s.fr != nil {
 		s.fr.Close()
