@@ -2,7 +2,6 @@
 package rascaldb
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,8 +23,8 @@ type DB struct {
 	// Actions are executed in run method which acts as a serialization point;
 	// have a look at Actor stuff https://speakerdeck.com/peterbourgon/ways-to-do-things.
 	actionsc chan func()
-	// cancel signals the actor to stop.
-	cancel context.CancelFunc
+	// quitc signals the actor to stop.
+	quitc chan struct{}
 }
 
 // Open opens a database with the specified name.
@@ -51,6 +50,7 @@ func Open(name string) (*DB, error) {
 	db := &DB{
 		name:     name,
 		actionsc: make(chan func()),
+		quitc:    make(chan struct{}),
 	}
 	db.segments.Store(
 		make([]*segment, 0, segmentsQty),
@@ -61,6 +61,7 @@ func Open(name string) (*DB, error) {
 	defer db.mu.Unlock()
 	ss := db.segments.Load().([]*segment)
 	var s *segment
+	// Open existing segments for reads and load indexes.
 	for _, segName := range filenames {
 		path = filepath.Join(db.name, segName)
 		if s, err = openSegment(path, false); err != nil {
@@ -82,10 +83,7 @@ func Open(name string) (*DB, error) {
 	// The old version will be garbage collected once the existing readers (if any) are done with it.
 	db.segments.Store(ss)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	db.cancel = cancel
-	go db.run(ctx)
-
+	go db.run()
 	return db, nil
 }
 
@@ -93,18 +91,18 @@ func Open(name string) (*DB, error) {
 func (db *DB) Close() {
 	// All segment files are closed...
 	// The state machine's loop is stopped.
-	db.cancel()
+	db.quitc <- struct{}{}
 }
 
 // run executes every function from actionsc and acts as a serialization point.
 // It doesn't know about business logic.
-func (db *DB) run(ctx context.Context) {
+func (db *DB) run() {
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case f := <-db.actionsc:
 			f()
+		case <-db.quitc:
+			return
 		}
 	}
 }
