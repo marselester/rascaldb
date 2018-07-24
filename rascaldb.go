@@ -12,6 +12,8 @@ import (
 type DB struct {
 	// name is a dir where segment files are stored.
 	name string
+	// segmentNamer is a function that returns random segment names.
+	segmentNamer func() string
 	// mu mutex is used only to modify segments slice.
 	mu sync.Mutex
 	// segments is a slice of segment files where records are stored.
@@ -48,9 +50,10 @@ func Open(name string) (*DB, error) {
 	// All existing segment files are opened for read only and a new segment is writable.
 	segmentsQty := len(filenames) + 1
 	db := &DB{
-		name:     name,
-		actionsc: make(chan func()),
-		quitc:    make(chan struct{}),
+		name:         name,
+		segmentNamer: newSegmentNamer(),
+		actionsc:     make(chan func()),
+		quitc:        make(chan struct{}),
 	}
 	db.segments.Store(
 		make([]*segment, 0, segmentsQty),
@@ -73,7 +76,7 @@ func Open(name string) (*DB, error) {
 		ss = append(ss, s)
 	}
 	// Create a new segment for writes.
-	path = filepath.Join(db.name, "some-new-name")
+	path = filepath.Join(db.name, db.segmentNamer())
 	if s, err = openSegment(path, true); err != nil {
 		return nil, err
 	}

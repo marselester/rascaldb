@@ -294,3 +294,12 @@ func TestDecode(t *testing.T) {
 		}
 	}
 }
+
+func TestNewSegmentNamer(t *testing.T) {
+	namer := newSegmentNamer()
+	n1 := namer()
+	n2 := namer()
+	if n1 == n2 {
+		t.Errorf("newSegmentNamer() name collision %q, %q", n1, n2)
+	}
+}

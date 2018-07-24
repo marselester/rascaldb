@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"math/rand"
 	"os"
+	"sync"
+	"time"
 )
 
 // recordLenSize is a record length in bytes needed to encode uint32.
@@ -138,4 +141,23 @@ func decode(b []byte) (string, []byte) {
 // For example, start from 0 offset, read key-value pair, move to offset += recordLen(key, value).
 func recordLen(key string, value []byte) uint32 {
 	return recordLenSize + uint32(len(key)) + 1 + uint32(len(value))
+}
+
+// newSegmentNamer returns segment filename generator which is safe for concurrent use.
+func newSegmentNamer() func() string {
+	const abc = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const abclen = int64(len(abc))
+	const namelen = 32
+	mu := sync.Mutex{}
+	src := rand.NewSource(time.Now().UnixNano())
+
+	return func() string {
+		b := make([]byte, namelen)
+		mu.Lock()
+		for i := range b {
+			b[i] = abc[src.Int63()%abclen]
+		}
+		mu.Unlock()
+		return string(b)
+	}
 }
