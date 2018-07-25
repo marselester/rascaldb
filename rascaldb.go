@@ -92,9 +92,13 @@ func Open(name string) (*DB, error) {
 
 // Close closes database resources.
 func (db *DB) Close() {
-	// All segment files are closed...
 	// The state machine's loop is stopped.
 	db.quitc <- struct{}{}
+	// All segment files are closed.
+	ss := db.segments.Load().([]*segment)
+	for _, s := range ss {
+		s.close()
+	}
 }
 
 // run executes every function from actionsc and acts as a serialization point.
