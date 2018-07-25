@@ -93,7 +93,7 @@ func Open(name string) (*DB, error) {
 // Close closes database resources.
 func (db *DB) Close() {
 	// The state machine's loop is stopped.
-	db.quitc <- struct{}{}
+	close(db.quitc)
 	// All segment files are closed.
 	ss := db.segments.Load().([]*segment)
 	for _, s := range ss {
