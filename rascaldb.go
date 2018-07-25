@@ -54,14 +54,7 @@ func Open(name string) (*DB, error) {
 		return nil, err
 	}
 
-	db.segments.Store(
-		make([]*segment, 0, len(filenames)),
-	)
-
-	// Make sure nobody is updating segments slice.
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	ss := db.segments.Load().([]*segment)
+	ss := make([]*segment, 0, len(filenames))
 	var s *segment
 	// Open segments for reads, load indexes. The last segment is opened for writes.
 	for i, segName := range filenames {
@@ -75,9 +68,6 @@ func Open(name string) (*DB, error) {
 		}
 		ss = append(ss, s)
 	}
-	// Atomically replace the current segments slice with the new one.
-	// At this point all new readers start working with the new version.
-	// The old version will be garbage collected once the existing readers (if any) are done with it.
 	db.segments.Store(ss)
 
 	go db.run()
