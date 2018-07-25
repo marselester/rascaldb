@@ -51,9 +51,9 @@ func TestOpen_new(t *testing.T) {
 	}
 
 	segments := db.segments.Load().([]*segment)
-	wantCap := 1
-	if cap(segments) != wantCap {
-		t.Errorf("Open(%q) got segments cap %d, want %d", dbpath, cap(segments), wantCap)
+	wantLen := 1
+	if len(segments) != wantLen {
+		t.Errorf("Open(%q) got segments %d, want %d", dbpath, len(segments), wantLen)
 	}
 }
 
@@ -70,9 +70,9 @@ func TestOpen_existing(t *testing.T) {
 	}
 
 	segments := db.segments.Load().([]*segment)
-	wantCap := 3
-	if cap(segments) != wantCap {
-		t.Errorf("Open(%q) got segments cap %d, want %d", dbpath, cap(segments), wantCap)
+	wantLen := 2
+	if len(segments) != wantLen {
+		t.Errorf("Open(%q) got segments %d, want %d", dbpath, len(segments), wantLen)
 	}
 
 	wantName := "testdata/read.db/oldsegment"

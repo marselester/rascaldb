@@ -32,31 +32,30 @@ type DB struct {
 // Open opens a database with the specified name.
 // If a database doesn't exist, it will be created. Database is a dir where segment files are kept.
 func Open(name string) (*DB, error) {
-	if err := os.MkdirAll(name, 0700); err != nil {
-		return nil, err
-	}
-
-	path := filepath.Join(name, trunk)
-	filenames, err := readSegmentNames(path)
-	// Since there is no trunk file, this is a new db.
-	// Let's make sure it's writable.
-	if os.IsNotExist(err) {
-		err = writeSegmentNames(path, nil)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// All existing segment files are opened for read only and a new segment is writable.
-	segmentsQty := len(filenames) + 1
-	db := &DB{
+	db := DB{
 		name:         name,
 		segmentNamer: newSegmentNamer(),
 		actionsc:     make(chan func()),
 		quitc:        make(chan struct{}),
 	}
+	if err := os.MkdirAll(db.name, 0700); err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(db.name, trunk)
+	filenames, err := readSegmentNames(path)
+	// Since there is no trunk file, this is a new database.
+	// Let's create the first segment and store its name in the trunk.
+	if os.IsNotExist(err) {
+		filenames = append(filenames, db.segmentNamer())
+		err = writeSegmentNames(path, filenames)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	db.segments.Store(
-		make([]*segment, 0, segmentsQty),
+		make([]*segment, 0, len(filenames)),
 	)
 
 	// Make sure nobody is updating segments slice.
@@ -64,10 +63,11 @@ func Open(name string) (*DB, error) {
 	defer db.mu.Unlock()
 	ss := db.segments.Load().([]*segment)
 	var s *segment
-	// Open existing segments for reads and load indexes.
-	for _, segName := range filenames {
+	// Open segments for reads, load indexes. The last segment is opened for writes.
+	for i, segName := range filenames {
+		isLast := i == len(filenames)-1
 		path = filepath.Join(db.name, segName)
-		if s, err = openSegment(path, false); err != nil {
+		if s, err = openSegment(path, isLast); err != nil {
 			return nil, err
 		}
 		if err = s.loadIndex(); err != nil {
@@ -75,19 +75,13 @@ func Open(name string) (*DB, error) {
 		}
 		ss = append(ss, s)
 	}
-	// Create a new segment for writes.
-	path = filepath.Join(db.name, db.segmentNamer())
-	if s, err = openSegment(path, true); err != nil {
-		return nil, err
-	}
-	ss = append(ss, s)
 	// Atomically replace the current segments slice with the new one.
 	// At this point all new readers start working with the new version.
 	// The old version will be garbage collected once the existing readers (if any) are done with it.
 	db.segments.Store(ss)
 
 	go db.run()
-	return db, nil
+	return &db, nil
 }
 
 // Close closes database resources.
