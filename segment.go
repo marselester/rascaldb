@@ -41,8 +41,7 @@ func openSegment(name string, writable bool) (*segment, error) {
 
 	var err error
 	if writable {
-		// By design we don't modify existing files.
-		if s.fw, err = os.OpenFile(name, os.O_CREATE|os.O_WRONLY, 0600); err != nil {
+		if s.fw, err = os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err != nil {
 			return &s, err
 		}
 	}

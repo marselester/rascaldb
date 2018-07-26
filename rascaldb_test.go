@@ -123,3 +123,35 @@ func TestDB_Get(t *testing.T) {
 		}
 	}
 }
+
+func TestDB_Set(t *testing.T) {
+	dbpath := "testdata/new.db"
+	db, err := Open(dbpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tt := []struct {
+		key   string
+		value []byte
+	}{
+		{"k", []byte("v")},
+		{"", []byte("blah")},
+		{"name", nil},
+	}
+
+	for _, tc := range tt {
+		if err = db.Set(tc.key, tc.value); err != nil {
+			t.Errorf("Set(%q, %q) error %v", tc.key, tc.value, err)
+		}
+
+		got, err := db.Get(tc.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, tc.value) {
+			t.Errorf("Set(%q, %q) read back %q", tc.key, tc.value, got)
+		}
+	}
+}
