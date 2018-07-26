@@ -20,23 +20,36 @@ Key ideas:
 - [x] sequence of database segments is stored in a trunk file
 - [ ] old log segments are compacted (old records of duplicate keys are removed)
 - [ ] old segments are merged
-- [ ] there is only one writer to make sure keys are written linearly
+- [x] there is only one writer to make sure keys are written linearly
 - [ ] ignore corrupted segments if a file's checksum doesn't match when db crashed
 
 ## Usage Example
 
 ```go
-db, err := rascaldb.Open("my.db")
-if err != nil {
-    log.Fatal(err)
-}
-defer db.Close()
+package main
 
-if err = db.Set("name", []byte("Moist von Lipwig")); err != nil {
-    log.Fatal(err)
-}
+import (
+	"fmt"
+	"log"
 
-if _, err := db.Get("name"); err == rascaldb.ErrKeyNotFound {
-    fmt.Println("name was not found")
+	"github.com/marselester/rascaldb"
+)
+
+func main() {
+	db, err := rascaldb.Open("my.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	name := []byte("Moist von Lipwig")
+	if err = db.Set("name", name); err != nil {
+		log.Fatal(err)
+	}
+
+	if name, err = db.Get("name"); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s\n", name)
 }
 ```

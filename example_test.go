@@ -19,8 +19,7 @@ func Example() {
 		log.Fatal(err)
 	}
 
-	name, err = db.Get("name")
-	if err != nil {
+	if name, err = db.Get("name"); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("%s\n", name)
